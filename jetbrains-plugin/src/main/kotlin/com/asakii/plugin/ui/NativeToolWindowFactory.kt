@@ -23,6 +23,8 @@ import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.content.ContentFactory
+import com.intellij.openapi.application.ApplicationInfo
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.util.ui.JBUI
@@ -46,6 +48,47 @@ class NativeToolWindowFactory : ToolWindowFactory, DumbAware {
 
     companion object {
         private val logger = Logger.getInstance(NativeToolWindowFactory::class.java)
+
+        /**
+         * 根据平台和 IDEA 版本确定是否启用 OSR 模式
+         *
+         * @return true 表示启用 OSR，false 表示禁用
+         */
+        private fun determineOsrMode(): Boolean {
+            return when {
+                SystemInfo.isMac -> {
+                    // macOS: 关闭 OSR
+                    false
+                }
+                SystemInfo.isLinux || SystemInfo.isUnix -> {
+                    // Linux/Unix: 根据 IDEA 版本决定
+                    val version = getIdeaMajorVersion()
+                    // IDEA 2023+ 开启 OSR
+                    version >= 2023
+                }
+                SystemInfo.isWindows -> {
+                    // Windows: 关闭 OSR
+                    false
+                }
+                else -> {
+                    // 未知平台，默认关闭 OSR
+                    false
+                }
+            }
+        }
+
+        /**
+         * 获取 IDEA 主版本号（如 2023、2024、2025）
+         */
+        private fun getIdeaMajorVersion(): Int {
+            return try {
+                val versionString = ApplicationInfo.getInstance().majorVersion
+                versionString.toIntOrNull() ?: 0
+            } catch (e: Exception) {
+                logger.warn("Failed to get IDEA major version: ${e.message}")
+                0
+            }
+        }
     }
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -93,9 +136,11 @@ class NativeToolWindowFactory : ToolWindowFactory, DumbAware {
             return
         }
 
-        // 使用 Builder 模式显式禁用 OSR，避免 IDEA 2025.x 中上下文菜单和 DevTools 被禁用
+        // 根据平台和 IDEA 版本决定是否启用 OSR 模式
+        val osrEnabled = determineOsrMode()
+        logger.info("🖥️ Platform: ${SystemInfo.OS_NAME}, IDEA version: ${getIdeaMajorVersion()}, OSR mode: $osrEnabled")
         val browser = JBCefBrowser.createBuilder()
-            .setOffScreenRendering(false)
+            .setOffScreenRendering(osrEnabled)
             .setEnableOpenDevToolsMenuItem(true)
             .build()
 
